@@ -1,2 +1,6 @@
-PyQt5>=5.15
-pywin32>=306
+PyQt5
+pywin32
+mss
+Pillow
+numpy
+requests

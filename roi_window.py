@@ -196,7 +196,7 @@ class RoiWindow(QWidget):
         pen = QPen(QColor(255, 255, 255), 2)
         painter.setPen(pen)
         cx = chart_x + int(chart_w / 2)
-        cy = chart_y + int(chart_h * 4 / 5)
+        cy = chart_y + int(chart_h - 5)
 
         painter.drawLine(cx - 5, cy, cx + 5, cy)  # 가로 10
         painter.drawLine(cx, cy - 5, cx, cy + 5)  # 세로 10
