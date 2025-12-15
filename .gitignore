@@ -36,6 +36,7 @@ venv.bak/
 .idea/
 *.swp
 *.swo
+*.png
 *~
 .DS_Store
 

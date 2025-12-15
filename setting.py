@@ -56,6 +56,7 @@ class RoiWindow(QWidget):
         self.rw = 220
         self.rh = 180
         self.bar_count = 2
+        self.show_point = False
 
         # config.json 로딩
         self.load_config()
@@ -131,6 +132,10 @@ class RoiWindow(QWidget):
         self.btn_close = QPushButton("닫기", self)
         self.btn_close.setGeometry(100, button_y, 70, 30)
         self.btn_close.clicked.connect(self.close)
+
+        self.btn_show = QPushButton("좌표X", self)
+        self.btn_show.setGeometry(180, button_y, 100, 30)
+        self.btn_show.clicked.connect(self.toogle)
 
         # ------------------------------
         # 입력창들 (x,y,w,h,bar_count)
@@ -229,6 +234,17 @@ class RoiWindow(QWidget):
         roi_rect.setGeometry(self.rx, self.ry, self.rw, self.rh)
         roi_rect.bar_count = self.bar_count
         self.update()
+
+    # ---------------------------------------------------------
+    # 좌표에 사각형 그리기 토글
+    # ---------------------------------------------------------
+    def toogle(self):
+        self.show_point = not self.show_point
+        if self.show_point:         
+            self.btn_show.setText("좌표O")
+        else:
+            self.btn_show.setText("좌표X")   
+        self.update()    
 
     # ---------------------------------------------------------
     # 선택한 항목만 저장

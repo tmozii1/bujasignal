@@ -1,4 +1,5 @@
 import json
+import io
 import os
 import sys
 import time
@@ -8,12 +9,16 @@ from PyQt5.QtWidgets import QApplication, QWidget, QPushButton, QTextEdit, QVBox
 from PyQt5.QtCore import QTimer, Qt
 from PIL import ImageGrab
 
+from datetime import datetime
 import win32gui
 import win32con
 
 FASTAPI_URL = "https://buja.tim.pe.kr/signal"
+FASTAPI_URL_IMG = "https://buja.tim.pe.kr/signalimg"
 WIN_TITLE = "buja chart" # "파일 탐색기" #
+CONFIG_FILE = os.path.join("dist", "config.json")
 TARGET_FILE = os.path.join("dist", "target.json")
+IS_SEND_IMAGE = True
 
 # ===== 색 정의 =====
 SIGNAL_COLORS = {
@@ -29,7 +34,7 @@ wy = 0
 class SignalApp(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Buja Chart Signal Monitor")
+        self.setWindowTitle("Signal Monitor")
         self.setGeometry(100, 600, 400, 300)
 
         # UI
@@ -46,20 +51,33 @@ class SignalApp(QWidget):
 
         # 모니터링 타이머
         self.timer = QTimer(self)
-        self.timer.setInterval(100)  # 0.1초
+        self.timer.setInterval(10)  # 0.1초
 
         self.timer.timeout.connect(self.checkSignals)
 
         # target.json 로드
         with open(TARGET_FILE, "r", encoding="utf-8") as f:
             self.targets = json.load(f)
-            
+
         self.prev_color = {
             item["name"]: {"p0": None, "p1": None}
             for item in self.targets
         }
         # 중복 전송 방지
         self.sent_flag = {item["name"]: False for item in self.targets}
+
+        # config.json 로드
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            self.config = json.load(f)
+        self.capturepoints = {
+            item["name"] : {
+                "x": item["x"],
+                "y": item["y"],
+                "w": item["w"],
+                "h": item["h"]
+            }
+            for item in self.config
+        }
 
     # --------------------------------------------------------
     # Buja Chart 창을 최상단으로
@@ -74,11 +92,11 @@ class SignalApp(QWidget):
         win32gui.EnumWindows(enumHandler, found)
 
         if found:
-            hwnd = found[0]
-            win32gui.SetForegroundWindow(hwnd)
-            wx, wy, _, _ = win32gui.GetWindowRect(hwnd)
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-            self.log("Buja Chart 창을 최상단으로 띄움.")
+            self.hwnd = found[0]
+            win32gui.SetForegroundWindow(self.hwnd)
+            self.wx, self.wy, _, _ = win32gui.GetWindowRect(self.hwnd)
+            win32gui.ShowWindow(self.hwnd, win32con.SW_RESTORE)
+            self.log(f"Buja Chart 창을 최상단으로 띄움. {self.wx}, {self.wy}")
         else:
             self.log("Buja Chart 창을 찾지 못함.")
 
@@ -86,6 +104,7 @@ class SignalApp(QWidget):
     # UI 로그 출력
     # --------------------------------------------------------
     def log(self, msg):
+        print(msg)
         self.logBox.append(msg)
 
     # --------------------------------------------------------
@@ -106,8 +125,8 @@ class SignalApp(QWidget):
     # 픽셀 색 읽기
     # --------------------------------------------------------
     def getPixel(self, x, y):
-        rx = wx + x
-        ry = wy + y
+        rx = self.wx + x
+        ry = self.wy + y
         img = ImageGrab.grab(bbox=(rx, ry, rx+1, ry+1))
         pixel = img.getpixel((0, 0))
         return pixel  # RGB 튜플
@@ -115,17 +134,48 @@ class SignalApp(QWidget):
     # --------------------------------------------------------
     # FastAPI 서버 전송
     # --------------------------------------------------------
-    def sendToServer(self, name, signal, msg):
+    def sendToServerWithImg(self, name, signal, msg, img):
+        # PIL Image → bytes
+        img_bytes = io.BytesIO()
+        img.save(img_bytes, format="PNG")
+        img_bytes.seek(0)
+
+        timestamp = datetime.now().strftime("%m%d %H%M%S")
         data = {
+            "timestamp": timestamp,
             "name": name,
             "signal": signal,
-            "msg": msg
+        }
+
+        files = {
+            "image": ("signal.png", img_bytes, "image/png")
+        }
+
+        try:
+            requests.post(
+                FASTAPI_URL_IMG,
+                data=data,
+                files=files,
+                timeout=(2, 5)
+            )
+            self.log(f"[{timestamp}] {name} - {signal} ({msg} {img_bytes.getbuffer().nbytes / 1024:.2f}KB)")
+
+        except Exception as e:
+            self.log(f"[{timestamp}] [전송 실패] {name} / {type(e).__name__}: {e}")
+
+    def sendToServer(self, name, signal, msg):
+        timestamp = datetime.now().strftime("%m%d %H%M%S")
+        data = {
+            "timestamp": timestamp,
+            "name": name,
+            "signal": signal
+            #"msg": msg
         }
         try:
-            requests.post(FASTAPI_URL, json=data, timeout=1)
-            self.log(f"[전송 완료] {name} - {signal} ({msg})")
-        except:
-            self.log(f"[전송 실패] {name}")
+            requests.post(FASTAPI_URL, json=data, timeout=(2, 5))
+            self.log(f"[{timestamp}] {name} - {signal} ({msg})")
+        except Exception as e:
+            self.log(f"[{timestamp}] [전송 실패] {name} / {type(e).__name__}: {e}")
 
     # --------------------------------------------------------
     # 메인 체크 로직
@@ -139,6 +189,9 @@ class SignalApp(QWidget):
             # 현재 색 읽기
             p0 = self.getPixel(x0, y0)
             p1 = self.getPixel(x1, y1)
+            
+            #self.captureDebugImage(x0, y0, name + "_p0")
+            #self.captureDebugImage(x1, y1, name + "_p1")
 
             # 이전 색 가져오기
             prev_p0 = self.prev_color[name]["p0"]
@@ -161,45 +214,44 @@ class SignalApp(QWidget):
 
             # 전송!
             signal, msg = SIGNAL_COLORS[p0]
-            self.sendToServer(name, signal, msg)
+            if IS_SEND_IMAGE:
+                point = self.capturepoints[name]
+                img = self.capture(point["x"], point["y"], point["w"], point["h"])
+                self.sendToServerWithImg(name, signal, msg, img)
+            else:
+                self.sendToServer(name, signal, msg)
             self.sent_flag[name] = True
 
-                    
-    def captureAreaAround(self, x, y, size=5, save_path=None):
+    def capture(self, x, y, w, h, save_path=None):
         """
-        (x, y) 중심으로 size 만큼 좌우 상하로 확장한 영역을 캡처.
-        예: size=5 → 11x11 영역
-
-        x, y        : 중심 좌표 (절대좌표)
-        size        : 반경 (5 → -5~+5)
-        save_path   : 파일 저장 경로 (None이면 이미지 반환만)
+        Buja Chart 상의 영역을 캡처.
+        (x, y) 좌상단 좌표, w, h 너비 높이
+        save_path: 저장 경로
         """
+        left = self.wx + x
+        top = self.wy + y
+        right = self.wx + x + w
+        bottom = self.wy + y + h
         
-        s = int(size / 2)
-
-        left = x - s
-        top = y - s
-        right = x + s
-        bottom = y + s
-
         img = ImageGrab.grab(bbox=(left, top, right, bottom))
 
         if save_path:
             img.save(save_path)
             return save_path
-
         return img
-
+                    
+    def captureAreaAround(self, x, y, size=5, save_path=None):
+        s = int(size / 2)
+        return capture(x - s, y - s, size * 2, size * 2, save_path)
 
     def captureDebugImage(self, x, y, name):
-        img = self.captureAreaAround(x, y, size=10, save_path=None)
+        img = self.captureAreaAround(x, y, size=2, save_path=None)
         img.save(f"debug_{name}.png")
-        self.log(f"디버그 이미지 저장: debug_{name}.png")
+        #self.log(f"디버그 이미지 저장: debug_{name}.png")
 
 # ============================================================
 #                      ★ main() 함수 ★
 # ============================================================
-
 def main():
     app = QApplication(sys.argv)
     win = SignalApp()
