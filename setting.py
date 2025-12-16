@@ -26,7 +26,7 @@ class RoiWindow(QWidget):
 
     - config.json 구조:
     [
-        { "name": "Gold", "x":..., "y":..., "w":..., "h":..., "bar_count":... },
+        { "name": "Gold", "x":..., "y":..., "w":..., "h":..., "ox0":..., "ox1":... },
         { "name": "CrudeOil", ... },
         ...
     ]
@@ -55,7 +55,8 @@ class RoiWindow(QWidget):
         self.ry = 50
         self.rw = 220
         self.rh = 180
-        self.bar_count = 2
+        self.ox0 = 50
+        self.ox1 = 65
         self.show_point = False
 
         # config.json 로딩
@@ -67,7 +68,7 @@ class RoiWindow(QWidget):
             rect = RoiRectangle(
                 self,
                 cfg["x"], cfg["y"], cfg["w"], cfg["h"],
-                self.bar_count,
+                cfg["ox0"], cfg["ox1"],
                 on_changed=self.update_inputs_from_rect
             )
             rect.setSelected(self.config_list.index(cfg) == 0)
@@ -96,7 +97,8 @@ class RoiWindow(QWidget):
                     "y": self.ry,
                     "w": self.rw,
                     "h": self.rh,
-                    "bar_count": self.bar_count
+                    "ox0": self.ox0,
+                    "ox1": self.ox1
                 }
             ]
 
@@ -114,7 +116,8 @@ class RoiWindow(QWidget):
         self.ry = int(item.get("y", self.ry))
         self.rw = int(item.get("w", self.rw))
         self.rh = int(item.get("h", self.rh))
-        self.bar_count = int(item.get("bar_count", self.bar_count))
+        self.ox0 = int(item.get("ox0", self.ox0))
+        self.ox1 = int(item.get("ox1", self.ox1))
 
     # ---------------------------------------------------------
     # UI 생성
@@ -138,10 +141,10 @@ class RoiWindow(QWidget):
         self.btn_show.clicked.connect(self.toogle)
 
         # ------------------------------
-        # 입력창들 (x,y,w,h,bar_count)
+        # 입력창들 (x,y,w,h,ox0,ox1)    
         # ------------------------------
-        labels = ["x", "y", "w", "h", "bar_count"]
-        defaults = [self.rx, self.ry, self.rw, self.rh, self.bar_count]
+        labels = ["x", "y", "w", "h", "ox0", "ox1"]
+        defaults = [self.rx, self.ry, self.rw, self.rh, self.ox0, self.ox1]
 
         self.inputs = {}
 
@@ -151,7 +154,7 @@ class RoiWindow(QWidget):
 
         current_y = bottom_start - row_gap
 
-        # x,y,w,h,bar_count 역순으로 배치
+        # x,y,w,h,ox0,ox1 역순으로 배치
         for name, value in reversed(list(zip(labels, defaults))):
             lbl = QLabel(name, self)
             lbl.move(20, current_y)
@@ -182,8 +185,9 @@ class RoiWindow(QWidget):
         self.setTabOrder(self.inputs["x"], self.inputs["y"])
         self.setTabOrder(self.inputs["y"], self.inputs["w"])
         self.setTabOrder(self.inputs["w"], self.inputs["h"])
-        self.setTabOrder(self.inputs["h"], self.inputs["bar_count"])
-        self.setTabOrder(self.inputs["bar_count"], self.btn_save)
+        self.setTabOrder(self.inputs["h"], self.inputs["ox0"])
+        self.setTabOrder(self.inputs["ox0"], self.inputs["ox1"])
+        self.setTabOrder(self.inputs["ox1"], self.btn_save)
         self.setTabOrder(self.btn_save, self.btn_close)
 
 
@@ -198,7 +202,7 @@ class RoiWindow(QWidget):
             rect.setSelected(i == idx)
 
         # --- 입력창 업데이트 시 textChanged 신호 차단 ---
-        for key in ["x", "y", "w", "h", "bar_count"]:
+        for key in ["x", "y", "w", "h", "ox0", "ox1"]:
             widget = self.inputs[key]
             widget.blockSignals(True)
         
@@ -207,10 +211,11 @@ class RoiWindow(QWidget):
         self.inputs["y"].setText(str(selected.y()))
         self.inputs["w"].setText(str(selected.width()))
         self.inputs["h"].setText(str(selected.height()))
-        self.inputs["bar_count"].setText(str(selected.getBarCount()))
+        self.inputs["ox0"].setText(str(selected.getOX0()))
+        self.inputs["ox1"].setText(str(selected.getOX1()))
 
         # --- 신호 다시 활성화 ---
-        for key in ["x", "y", "w", "h", "bar_count"]:
+        for key in ["x", "y", "w", "h", "ox0", "ox1"]:
             widget = self.inputs[key]
             widget.blockSignals(False)
 
@@ -226,13 +231,15 @@ class RoiWindow(QWidget):
             self.ry = int(self.inputs["y"].text())
             self.rw = int(self.inputs["w"].text())
             self.rh = int(self.inputs["h"].text())
-            self.bar_count = int(self.inputs["bar_count"].text())
+            self.ox0 = int(self.inputs["ox0"].text())
+            self.ox1 = int(self.inputs["ox1"].text())
         except:
             return
 
         roi_rect = self.roi_rects[self.current_index]
         roi_rect.setGeometry(self.rx, self.ry, self.rw, self.rh)
-        roi_rect.bar_count = self.bar_count
+        roi_rect.setOX0(self.ox0)
+        roi_rect.setOX1(self.ox1)
         self.update()
 
     # ---------------------------------------------------------
@@ -258,9 +265,10 @@ class RoiWindow(QWidget):
             cfg["y"] = roi_rect.y()
             cfg["w"] = roi_rect.width()
             cfg["h"] = roi_rect.height()
-            cfg["bar_count"] = roi_rect.getBarCount()
+            cfg["ox0"] = roi_rect.getOX0()
+            cfg["ox1"] = roi_rect.getOX1()
             
-            x0, y0, x1, y1 = roi_rect.getPoints()
+            (x0, y0), (x1, y1) = roi_rect.getPoints()
             t = {
                 "name": cfg["name"],
                 "x0": x0,
@@ -294,17 +302,18 @@ class RoiWindow(QWidget):
         ry = roi_rect.y()
         rw = roi_rect.width()
         rh = roi_rect.height()
-        count = roi_rect.getBarCount()
+        ox0 = roi_rect.getOX0()
+        ox1 = roi_rect.getOX1()
 
         # QLineEdit 입력창 갱신
         self.inputs["x"].setText(str(rx))
         self.inputs["y"].setText(str(ry))
         self.inputs["w"].setText(str(rw))
         self.inputs["h"].setText(str(rh))
-        self.inputs["bar_count"].setText(str(count))
+        self.inputs["ox0"].setText(str(ox0))
+        self.inputs["ox1"].setText(str(ox1))
 
-        # bar_count는 rectangle 이동/리사이즈에 영향 X → 갱신 없음
-        # 화면 다시 그리기
+       # 화면 다시 그리기
         self.update()
 
 

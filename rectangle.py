@@ -16,11 +16,12 @@ class RoiRectangle(QWidget):
     개선 사항:
     - 콜백 방식으로 부모 업데이트 호출
     """
-    def __init__(self, parent, x, y, w, h, bar_count, on_changed=None):
+    def __init__(self, parent, x, y, w, h, ox0, ox1, on_changed=None):
         super().__init__(parent)
         self.setGeometry(x, y, w, h)
 
-        self.bar_count = bar_count
+        self.ox0 = ox0
+        self.ox1 = ox1
         self.on_changed = on_changed
 
         self.dragging = False
@@ -31,8 +32,17 @@ class RoiRectangle(QWidget):
 
         self.setMouseTracking(True)
         
-    def getBarCount(self):
-        return self.bar_count
+    def getOX0(self):
+        return self.ox0
+        
+    def getOX1(self):
+        return self.ox1
+
+    def setOX0(self, ox0):
+        self.ox0 = ox0
+        
+    def setOX1(self, ox1):
+        self.ox1 = ox1
         
     def setSelected(self, selected: bool):
         self.selected = selected
@@ -42,24 +52,20 @@ class RoiRectangle(QWidget):
         offset_x = 10
         offset_y = 54
         
-        chart_w = int((self.width() - offset_x - 81) / self.bar_count)
-        
-        chart_x = offset_x + chart_w * (self.bar_count - 1)
         chart_y = offset_y
-        chart_h = self.height() - offset_y - 42
+        x = self.x() + self.width()
+        y = self.y() + self.height()
         
-        cx = self.x() + chart_x + int(chart_w / 2)
-        cy = self.y() + chart_y + int(chart_h - 5)
-        
-        p1 = (cx, cy)
-        p2 = (cx - chart_w, cy)
-        return cx, cy, cx - chart_w, cy
+        cy = y - 45 - 10
+        p0 = (x - self.ox0, cy)
+        p1 = (x - self.ox1, cy)
+
+        return p0, p1
 
     def paintEvent(self, event):
         painter = QPainter(self)
 
         # ROI 테두리 색 적용
-        
         color  = QColor(0,0,255)
         if self.selected:
             color = QColor(255,0,0)  # 빨간색(선택됨)
@@ -67,32 +73,24 @@ class RoiRectangle(QWidget):
         pen = QPen(color, 2)
         painter.setPen(pen)
         painter.drawRect(0, 0, self.width() - 1, self.height() - 1)
-        
-        # 🔶 노란 박스(차트 영역)
-        offset_x = 10
-        offset_y = 54
-        chart_w = int((self.width() - offset_x - 81) / self.bar_count)
-        chart_x = offset_x + chart_w * (self.bar_count - 1)
-        chart_y = offset_y
-        chart_h = self.height() - offset_y - 42
-        cx = chart_x + int(chart_w / 2)
-        cy = chart_y + int(chart_h - 5)
-
-        if chart_w > 0 and chart_h > 0:
-            pen = QPen(QColor(255, 255, 0), 2)
-            painter.setPen(pen)
-            painter.drawRect(chart_x, chart_y, chart_w, chart_h)
 
         # 🔶 클릭 십자 표시
+        p0, p1 = self.getPoints()
+        mark = 5
+
+        cx = p0[0] - self.x()
+        cy = p0[1] - self.y()
         pen = QPen(QColor(255, 255, 255), 2)
         painter.setPen(pen)
-        painter.drawLine(cx - 5, cy, cx + 5, cy)  # 가로 10
-        painter.drawLine(cx, cy - 5, cx, cy + 5)  # 세로 10
+        painter.drawLine(cx - mark, cy, cx + mark, cy)
+        painter.drawLine(cx, cy - mark, cx, cy + mark)
         
+        cx = p1[0] - self.x()
+        cy = p1[1] - self.y()
         pen = QPen(QColor(255, 0, 255), 2)
         painter.setPen(pen)
-        painter.drawLine(cx - 5 - chart_w, cy, cx + 5 - chart_w, cy)  # 가로 10
-        painter.drawLine(cx - chart_w, cy - 5, cx - chart_w, cy + 5)  # 세로 10
+        painter.drawLine(cx - mark, cy, cx + mark, cy)
+        painter.drawLine(cx, cy - mark, cx, cy + mark)
 
 
     # ---------------------------------------------------------
