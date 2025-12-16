@@ -15,21 +15,22 @@ import win32con
 
 FASTAPI_URL = "https://buja.tim.pe.kr/signal"
 FASTAPI_URL_IMG = "https://buja.tim.pe.kr/signalimg"
-WIN_TITLE = "buja chart" # "파일 탐색기" #
+WIN_TITLE = "buja chart"  # "파일 탐색기" #
 CONFIG_FILE = os.path.join("dist", "config.json")
 TARGET_FILE = os.path.join("dist", "target.json")
 IS_SEND_IMAGE = True
 
 # ===== 색 정의 =====
 SIGNAL_COLORS = {
-    (255, 0, 0): ("1", "1920틱 상승"),
-    (0, 0, 255): ("2", "1920틱 하락"),
-    (255, 0, 255): ("3", "480틱 상승"),
-    (0, 255, 255): ("4", "480틱 하락")
+    (255, 0, 255): ("1", "상승"),
+    (0, 255, 255): ("2", "하락"),
+    (255, 0, 0): ("3", "상위 상승"),
+    (0, 0, 255): ("4", "상위 하락"),
 }
 WHITE = (255, 255, 255)
 wx = 0
 wy = 0
+
 
 class SignalApp(QWidget):
     def __init__(self):
@@ -60,8 +61,7 @@ class SignalApp(QWidget):
             self.targets = json.load(f)
 
         self.prev_color = {
-            item["name"]: {"p0": None, "p1": None}
-            for item in self.targets
+            item["name"]: {"p0": None, "p1": None} for item in self.targets
         }
         # 중복 전송 방지
         self.sent_flag = {item["name"]: False for item in self.targets}
@@ -70,14 +70,16 @@ class SignalApp(QWidget):
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             self.config = json.load(f)
         self.capturepoints = {
-            item["name"] : {
+            item["name"]: {
                 "x": item["x"],
                 "y": item["y"],
                 "w": item["w"],
-                "h": item["h"]
+                "h": item["h"],
             }
             for item in self.config
         }
+
+        self.send_color = None
 
     # --------------------------------------------------------
     # Buja Chart 창을 최상단으로
@@ -127,8 +129,12 @@ class SignalApp(QWidget):
     def getPixel(self, x, y):
         rx = self.wx + x
         ry = self.wy + y
-        img = ImageGrab.grab(bbox=(rx, ry, rx+1, ry+1))
+        img = ImageGrab.grab(bbox=(rx, ry, rx + 1, ry + 1))
         pixel = img.getpixel((0, 0))
+
+        if pixel not in SIGNAL_COLORS:
+            pixel = (255, 255, 255)
+
         return pixel  # RGB 튜플
 
     # --------------------------------------------------------
@@ -147,18 +153,13 @@ class SignalApp(QWidget):
             "signal": signal,
         }
 
-        files = {
-            "image": ("signal.png", img_bytes, "image/png")
-        }
+        files = {"image": ("signal.png", img_bytes, "image/png")}
 
         try:
-            requests.post(
-                FASTAPI_URL_IMG,
-                data=data,
-                files=files,
-                timeout=(2, 5)
+            requests.post(FASTAPI_URL_IMG, data=data, files=files, timeout=(2, 5))
+            self.log(
+                f"[{timestamp}] {name} - {signal} ({msg} {img_bytes.getbuffer().nbytes / 1024:.2f}KB)"
             )
-            self.log(f"[{timestamp}] {name} - {signal} ({msg} {img_bytes.getbuffer().nbytes / 1024:.2f}KB)")
 
         except Exception as e:
             self.log(f"[{timestamp}] [전송 실패] {name} / {type(e).__name__}: {e}")
@@ -168,8 +169,8 @@ class SignalApp(QWidget):
         data = {
             "timestamp": timestamp,
             "name": name,
-            "signal": signal
-            #"msg": msg
+            "signal": signal,
+            # "msg": msg
         }
         try:
             requests.post(FASTAPI_URL, json=data, timeout=(2, 5))
@@ -189,13 +190,16 @@ class SignalApp(QWidget):
             # 현재 색 읽기
             p0 = self.getPixel(x0, y0)
             p1 = self.getPixel(x1, y1)
-            
-            #self.captureDebugImage(x0, y0, name + "_p0")
-            #self.captureDebugImage(x1, y1, name + "_p1")
+
+            self.captureDebugImage(x0, y0, name + "_p0")
+            self.captureDebugImage(x1, y1, name + "_p1")
 
             # 이전 색 가져오기
             prev_p0 = self.prev_color[name]["p0"]
             prev_p1 = self.prev_color[name]["p1"]
+
+            if prev_p1 != p1:
+                self.send_color = None
 
             # 변화 여부 체크
             changed = (prev_p0 != p0) or (prev_p1 != p1)
@@ -209,8 +213,11 @@ class SignalApp(QWidget):
             self.prev_color[name]["p1"] = p1
 
             # p0이 지정 색이 아니라면 skip
-            if p0 not in SIGNAL_COLORS:
+            if p0 not in SIGNAL_COLORS or self.send_color == p0:
                 continue
+
+            self.send_color = p0
+            print(p0, p1)
 
             # 전송!
             signal, msg = SIGNAL_COLORS[p0]
@@ -232,22 +239,23 @@ class SignalApp(QWidget):
         top = self.wy + y
         right = self.wx + x + w
         bottom = self.wy + y + h
-        
+
         img = ImageGrab.grab(bbox=(left, top, right, bottom))
 
         if save_path:
             img.save(save_path)
             return save_path
         return img
-                    
+
     def captureAreaAround(self, x, y, size=5, save_path=None):
         s = int(size / 2)
-        return capture(x - s, y - s, size * 2, size * 2, save_path)
+        return self.capture(x - s, y - s, size * 2, size * 2, save_path)
 
     def captureDebugImage(self, x, y, name):
-        img = self.captureAreaAround(x, y, size=2, save_path=None)
+        img = self.captureAreaAround(x, y, size=10, save_path=None)
         img.save(f"debug_{name}.png")
-        #self.log(f"디버그 이미지 저장: debug_{name}.png")
+        # self.log(f"디버그 이미지 저장: debug_{name}.png")
+
 
 # ============================================================
 #                      ★ main() 함수 ★
