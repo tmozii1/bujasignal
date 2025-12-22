@@ -13,8 +13,18 @@ from datetime import datetime
 import win32gui
 import win32con
 
-FASTAPI_URL = "https://buja.tim.pe.kr/signal"
-FASTAPI_URL_IMG = "https://buja.tim.pe.kr/signalimg"
+
+
+
+# 개발 모드 여부 확인
+IS_DEV = "--dev" in sys.argv
+
+if IS_DEV:
+    FASTAPI_URL = "http://buja.tim.pe.kr/dev/signal"
+    FASTAPI_URL_IMG = "http://buja.tim.pe.kr/dev/signalimg"
+else:
+    FASTAPI_URL = "https://buja.tim.pe.kr/signal"
+    FASTAPI_URL_IMG = "https://buja.tim.pe.kr/signalimg"
 WIN_TITLE = "buja chart"  # "파일 탐색기" #
 CONFIG_FILE = os.path.join("dist", "config.json")
 TARGET_FILE = os.path.join("dist", "target.json")
